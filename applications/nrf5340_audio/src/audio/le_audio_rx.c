@@ -37,6 +37,9 @@ K_THREAD_STACK_DEFINE(audio_datapath_thread_stack, CONFIG_AUDIO_DATAPATH_STACK_S
 
 DATA_FIFO_DEFINE(ble_fifo_rx, CONFIG_BUF_BLE_RX_PACKET_NUM, WB_UP(sizeof(struct ble_iso_data)));
 
+// BK
+extern void toggle_timer_rx_iso(uint32_t sdu_ref_us);
+
 /* Callback for handling ISO RX */
 void le_audio_rx_data_handler(uint8_t const *const p_data, size_t data_size, bool bad_frame,
 			      uint32_t sdu_ref, enum audio_channel channel_index,
@@ -54,6 +57,9 @@ void le_audio_rx_data_handler(uint8_t const *const p_data, size_t data_size, boo
 
 	/* Capture timestamp of when audio frame is received */
 	uint32_t recv_frame_ts = audio_sync_timer_capture();
+
+    // BK Toggle:
+    toggle_timer_rx_iso(sdu_ref);
 
 	rx_stats[channel_index].recv_cnt++;
 

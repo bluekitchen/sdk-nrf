@@ -17,6 +17,9 @@
 
 
 #include <zephyr/logging/log.h>
+
+#include "led.h"
+
 LOG_MODULE_REGISTER(audio_sync_timer, CONFIG_AUDIO_SYNC_TIMER_LOG_LEVEL);
 
 #define AUDIO_SYNC_TIMER_NET_APP_IPC_EVT_CHANNEL                4
@@ -29,8 +32,18 @@ LOG_MODULE_REGISTER(audio_sync_timer, CONFIG_AUDIO_SYNC_TIMER_LOG_LEVEL);
 #define AUDIO_SYNC_HF_TIMER_CURR_TIME_CAPTURE_CHANNEL           1
 #define AUDIO_SYNC_HF_TIMER_CURR_TIME_CAPTURE                   NRF_TIMER_TASK_CAPTURE1
 
+// BK
+#define TOGGLE_HF_TIMER_INSTANCE_NUMBER                         2
+
+#define TOGGLE_HF_TIMER_CAPTURE_CHANNEL                         0
+#define TOGGLE_HF_TIMER_COMPARE_CHANNEL                         1
+
 static const nrfx_timer_t audio_sync_hf_timer_instance =
 	NRFX_TIMER_INSTANCE(AUDIO_SYNC_HF_TIMER_INSTANCE_NUMBER);
+
+// BK
+static const nrfx_timer_t toggle_hf_timer_instance =
+    NRFX_TIMER_INSTANCE(TOGGLE_HF_TIMER_INSTANCE_NUMBER);
 
 static uint8_t dppi_channel_i2s_frame_start;
 
@@ -253,6 +266,61 @@ static int audio_sync_timer_init(void)
 	LOG_DBG("Audio sync timer initialized");
 
 	return 0;
+}
+
+// BK
+static bool toggle_timer_led;
+
+uint32_t toggle_timer_capture_get(void)
+{
+    return nrfx_timer_capture(&toggle_hf_timer_instance,
+                              TOGGLE_HF_TIMER_CAPTURE_CHANNEL);
+}
+
+static void toggle_timer_isr_handler(nrf_timer_event_t event_type, void *ctx)
+{
+    ARG_UNUSED(ctx);
+
+    switch (event_type) {
+        case NRF_TIMER_EVENT_COMPARE1:
+            // toggle
+            toggle_timer_led = !toggle_timer_led;
+            if (toggle_timer_led) {
+                led_on(LED_APP_2_GREEN);
+            } else {
+                led_off(LED_APP_2_GREEN);
+            }
+            break;
+        default:
+            break;
+    }
+}
+
+void toggle_timer_init(void) {
+    nrfx_err_t ret;
+
+    // - init toggle timer
+    ret = nrfx_timer_init(&toggle_hf_timer_instance, &cfg, toggle_timer_isr_handler);
+    if (ret - NRFX_ERROR_BASE_NUM) {
+        LOG_ERR("nrfx timer init error: %d", ret);
+        return;
+    }
+
+    // - enable toggle timer
+    nrfx_timer_enable(&toggle_hf_timer_instance);
+
+    // - setup IRQ handler
+    IRQ_CONNECT(TIMER2_IRQn, IRQ_PRIO_LOWEST, nrfx_timer_2_irq_handler, NULL, 0);
+}
+
+void toggle_timer_rx_iso(uint32_t sdu_ref_us) {
+    // get Bluetooth time and local
+    // TODO: use NGU to get all timers atomically
+    uint32_t bluetooth_time_us = audio_sync_timer_capture();
+    uint32_t mcu_now_us = toggle_timer_capture_get();
+    uint32_t presentation_delay_us = 3000;
+    uint32_t mcu_toggle_us = mcu_now_us + (sdu_ref_us - bluetooth_time_us) + presentation_delay_us;
+    nrfx_timer_compare(&toggle_hf_timer_instance, TOGGLE_HF_TIMER_COMPARE_CHANNEL, mcu_toggle_us, true);
 }
 
 SYS_INIT(audio_sync_timer_init, POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);

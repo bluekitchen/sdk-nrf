@@ -103,6 +103,9 @@ static int channel_assign_check(void)
 	return 0;
 }
 
+void toggle_timer_init(void);
+void toggle_timer_run(void);
+
 int nrf5340_audio_dk_init(void)
 {
 	int ret;
@@ -117,6 +120,8 @@ int nrf5340_audio_dk_init(void)
 		LOG_ERR("Failed to initialize LED module");
 		return ret;
 	}
+
+    toggle_timer_init();
 
 	ret = button_handler_init();
 	if (ret) {
